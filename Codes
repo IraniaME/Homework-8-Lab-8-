@@ -1,0 +1,146 @@
+#Irania Matos 
+#Groups: Nancy Reyes Soto,  Keyla Pereira, Kerra Sinanan, Heidy Collado.
+# Lab 8
+
+library(ggplot2)
+library(tidyverse)
+library(haven)
+library(standardize)
+
+setwd("/Users/irania/Downloads")
+load("ACS_2021_couples.RData")
+
+#10years 
+ols_out1 <- lm(he_more_than_10yrs_than_her ~ educ_hs + educ_somecoll + educ_college + educ_advdeg + AGE, data = trad_data)
+
+pred_vals_ols1 <- predict(ols_out1, trad_data)
+pred_model_ols1 <- (pred_vals_ols1 > mean(pred_vals_ols1))
+table(pred = pred_model_ols1, true = trad_data$he_more_than_10yrs_than_her)
+
+model_logit1 <- glm(he_more_than_10yrs_than_her ~ educ_hs + educ_somecoll + educ_college + educ_advdeg + AGE, data = trad_data, family = binomial)
+summary(model_logit1)
+
+pred_vals <- predict(model_logit1, trad_data, type = "response")
+pred_model_logit1 <- (pred_vals > mean(pred_vals))
+table(pred = pred_model_logit1, true = trad_data$he_more_than_10yrs_than_her)
+
+#Lab 8 Addendum
+
+dat_use <- trad_data
+
+#Create model.matrix versions of every variable
+d_y_varb <- data.frame(model.matrix(~ dat_use$he_more_than_10yrs_than_her))
+
+d_educ_hs       <- data.frame(model.matrix(~ dat_use$educ_hs))
+d_educ_somecoll <- data.frame(model.matrix(~ dat_use$educ_somecoll))
+d_educ_college  <- data.frame(model.matrix(~ dat_use$educ_college))
+d_educ_advdeg   <- data.frame(model.matrix(~ dat_use$educ_advdeg))
+d_age           <- data.frame(model.matrix(~ dat_use$AGE))
+
+
+dat_for_analysis_sub <- data.frame(
+  d_y_varb[,2],
+  d_educ_hs[,2],
+  d_educ_somecoll[,2],
+  d_educ_college[,2],
+  d_educ_advdeg[,2],
+  d_age[,2]
+)
+
+#Rename variables
+names(dat_for_analysis_sub) <- c(
+  "he_more_than_10yrs_than_her",
+  "HS", "SomeColl", "College", "AdvDeg",
+  "Age"
+)
+
+#Create training indicator (10%)
+
+set.seed(654321)
+NN <- nrow(dat_for_analysis_sub)
+
+restrict_1 <- (runif(NN) < 0.10)   # 10% training
+summary(restrict_1)
+
+dat_train <- subset(dat_for_analysis_sub, restrict_1)
+dat_test  <- subset(dat_for_analysis_sub, !restrict_1)
+
+sum(colSums(dat_train) == 0)   # should be zero
+
+#Part 3 
+
+formula_sobj <- reformulate(
+  names(dat_for_analysis_sub)[2:length(dat_for_analysis_sub)],
+  response = "he_more_than_10yrs_than_her"
+)
+
+sobj <- standardize(formula_sobj, dat_train, family = binomial)
+s_dat_test <- predict(sobj, dat_test)
+
+
+#Linear Model 
+model_lpm1 <- lm(sobj$formula, data = sobj$data)
+summary(model_lpm1)
+
+pred_vals_lpm <- predict(model_lpm1, s_dat_test)
+pred_model_lpm1 <- (pred_vals_lpm > mean(pred_vals_lpm))
+
+table(pred = pred_model_lpm1, true = dat_test$he_more_than_10yrs_than_her)
+
+#Logit 
+model_logit1 <- glm(sobj$formula, family = binomial, data = sobj$data)
+summary(model_logit1)
+
+pred_vals_logit <- predict(model_logit1, s_dat_test, type = "response")
+pred_model_logit1 <- (pred_vals_logit > mean(pred_vals_logit))
+
+table(pred = pred_model_logit1, true = dat_test$he_more_than_10yrs_than_her)
+
+
+#Graph 1
+
+trad_data$educ_group <- case_when(
+  trad_data$educ_hs == 1 ~ "HS",
+  trad_data$educ_somecoll == 1 ~ "Some College",
+  trad_data$educ_college == 1 ~ "College",
+  trad_data$educ_advdeg == 1 ~ "Advanced Deg"
+)
+
+ggplot(trad_data, aes(x = AGE, y = pred_prob_logit, color = educ_group)) +
+  geom_smooth(se = FALSE) +
+  labs(
+    x = "Woman’s Age",
+    y = "Predicted Probability",
+    color = "Education",
+    title = "Logit Predictions by Age and Education Level"
+  ) +
+  theme_minimal()
+
+#There is a clear monotonic pattern: as education increases, the predicted probability of a large age gap declines. 
+#Age and education jointly shape the estimated probability, with younger and less educated women having the highest predicted values.
+
+#Graph 2
+
+ggplot(trad_data, aes(x = pred_prob_logit, fill = factor(he_more_than_10yrs_than_her))) +
+  geom_density(alpha = 0.4) +
+  labs(
+    x = "Predicted Probability (Logit)",
+    fill = "Actual Outcome",
+    title = "Density of Predicted Probabilities: 0 vs 1"
+  ) +
+  theme_minimal()
+
+#The densities overlap heavily, showing why prediction is difficult: 
+#the logit model does not sharply separate couples with large vs small age gaps.
+
+
+
+
+
+
+
+
+
+
+
+
